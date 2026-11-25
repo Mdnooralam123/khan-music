@@ -123,6 +123,21 @@ body.pl #fb{animation:pls 2.4s ease-in-out infinite}
 #qh{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 6px;font-size:18px}
 #qh button{width:34px;height:34px;display:grid;place-items:center}
 #ql{overflow-y:auto;flex:1;padding-bottom:20px}
+#sug{display:none;position:absolute;left:14px;right:14px;top:100%;margin-top:-2px;background:rgba(22,22,30,.98);border:1px solid var(--bd);border-radius:20px;overflow-y:auto;max-height:62vh;box-shadow:0 18px 50px rgba(0,0,0,.6);z-index:7}
+.sg{display:flex;align-items:center;gap:12px;padding:13px 16px;font-size:16px;font-weight:500}
+.sg:active{background:rgba(255,255,255,.07)}
+.sgi{color:var(--mut);display:grid;place-items:center}
+.sgt{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sgx{padding:6px;color:var(--mut)}
+#qc{display:none;padding:6px;color:var(--mut)}
+#sheet{position:fixed;left:0;right:0;top:0;bottom:0;z-index:40;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .25s}
+#sheet.open{opacity:1;pointer-events:auto}
+#shc{width:100%;background:rgba(24,24,32,.98);border-radius:26px 26px 0 0;border-top:1px solid var(--bd);padding:16px 8px 22px;transform:translateY(40px);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+#sheet.open #shc{transform:none}
+#shh{display:flex;gap:12px;align-items:center;padding:4px 14px 14px;border-bottom:1px solid var(--bd);margin-bottom:6px}
+#shh img{width:54px;height:54px;border-radius:12px;object-fit:cover;background:#1a1a22;flex:none}
+.shb{display:flex;align-items:center;gap:16px;width:100%;padding:15px 18px;font-size:16px;font-weight:500;text-align:left}
+.shb:active{background:rgba(255,255,255,.07)}
 #toast{position:fixed;top:18px;left:50%;transform:translate(-50%,-90px);background:rgba(30,30,40,.96);border:1px solid var(--bd);padding:10px 18px;border-radius:24px;font-size:14px;z-index:50;transition:transform .35s;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:90vw;text-align:center}
 #toast.show{transform:translate(-50%,0)}
 </style></head><body>
@@ -130,7 +145,8 @@ body.pl #fb{animation:pls 2.4s ease-in-out infinite}
 <div id=app>
 <div id=top>
  <div id=brand><div id=badge data-i=play data-s=18></div><span id=logo>Khan Music</span><button id=upb onclick="chkUpd(false)" data-i=upd data-s=22></button></div>
- <div id=sb><span data-i=search data-s=20></span><input id=q placeholder="Songs, artists, albums..." enterkeyhint=search autocomplete=off></div>
+ <div id=sb><span data-i=search data-s=20></span><input id=q placeholder="Songs, artists, albums..." enterkeyhint=search autocomplete=off><button id=qc onclick="clearQ()" data-i=close data-s=20></button></div>
+ <div id=sug></div>
 </div>
 <div id=hero onclick=openFull()><img id=hi alt=""><div class=m><small id=hlb>NOW PLAYING</small><div id=ht class=a></div><small id=hb></small><div id=hp><div id=hpb></div></div></div><span id=heq><i></i><i></i><i></i></span><button id=hbt onclick="event.stopPropagation();tg()"></button></div>
 <div id=chips></div>
@@ -153,6 +169,15 @@ body.pl #fb{animation:pls 2.4s ease-in-out infinite}
  </div>
  <div id=qs><div id=qh><b>Up next</b><button onclick=closeQ() data-i=down data-s=28></button></div><div id=ql></div></div>
 </div>
+<div id=sheet onclick="closeSheet()"><div id=shc onclick="event.stopPropagation()">
+ <div id=shh><img id=shi alt=""><div class=m><div id=sht class=a></div><small id=shb></small></div></div>
+ <button class=shb onclick="shPlay()"><span data-i=play data-s=22></span><span>Play now (similar gaane ke saath)</span></button>
+ <button class=shb onclick="shNext()"><span data-i=next data-s=22></span><span>Play next</span></button>
+ <button class=shb onclick="shQueue()"><span data-i=queue data-s=22></span><span>Queue me add karo</span></button>
+ <button class=shb id=shd onclick="shDl()"></button>
+ <button class=shb id=shl onclick="shLike()"></button>
+ <button class=shb onclick="shShare()"><span data-i=share data-s=22></span><span>Share karo</span></button>
+</div></div>
 <div id=toast></div>
 <script>
 const $=id=>document.getElementById(id);
@@ -173,7 +198,10 @@ search:'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 
 lib:'M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 5h-3v5.5c0 1.38-1.12 2.5-2.5 2.5S10 13.88 10 12.5s1.12-2.5 2.5-2.5c.57 0 1.08.19 1.5.51V5h4v2zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z',
 dl:'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z',
 upd:'M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z',
-check:'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'
+check:'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+close:'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+hist:'M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z',
+share:'M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z'
 };
 const CH=['Feel good','Romance','Relax','Energize','Bollywood','Punjabi','Lofi','Hip Hop','Arijit Singh','Devotional','Old Songs','Bhojpuri','English Pop','Sad','Party','Workout','Focus','Sleep'];
 const TM=[0,15,30,60];
@@ -203,8 +231,8 @@ function dlHtml(id){
  if(p===undefined)return svg('dl',20);
  if(p<0)return '<span class=sp>'+svg('dl',20)+'</span>';
  return '<span class=pc>'+p+'%</span>'}
-function row(e,k,n){return '<div class=it data-id="'+e.id+'" style="--d:'+(Math.min(n,10)*35)+'ms" onclick="pk(\''+k+'\','+n+')"><img loading=lazy src="'+art(e.id)+'" onerror="this.style.opacity=0"><div class=m><div class=a>'+esc(e.title)+'</div><small>'+esc(e.by||'')+(e.dur?' &bull; '+e.dur:'')+'</small></div><span class=eqb><i></i><i></i><i></i></span><button class="dlb'+(dlset.has(e.id)?' done':'')+'" data-d="'+e.id+'" onclick="event.stopPropagation();dlTap(\''+k+'\','+n+')">'+dlHtml(e.id)+'</button><button class="hb'+(isL(e.id)?' liked':'')+'" onclick="event.stopPropagation();lk(\''+k+'\','+n+',this)">'+svg(isL(e.id)?'heart':'hearto',22)+'</button></div>'}
-function card(e,k,n){return '<div class=card data-id="'+e.id+'" style="--d:'+(Math.min(n,8)*50)+'ms" onclick="pk(\''+k+'\','+n+')"><img loading=lazy src="'+art(e.id)+'" onerror="this.style.opacity=0"><b>'+esc(e.title)+'</b><small>'+esc(e.by||'')+'</small></div>'}
+function row(e,k,n){return '<div class=it data-id="'+e.id+'" data-k="'+k+'" data-n="'+n+'" style="--d:'+(Math.min(n,10)*35)+'ms" onclick="pk(\''+k+'\','+n+')"><img loading=lazy src="'+art(e.id)+'" onerror="this.style.opacity=0"><div class=m><div class=a>'+esc(e.title)+'</div><small>'+esc(e.by||'')+(e.dur?' &bull; '+e.dur:'')+'</small></div><span class=eqb><i></i><i></i><i></i></span><button class="dlb'+(dlset.has(e.id)?' done':'')+'" data-d="'+e.id+'" onclick="event.stopPropagation();dlTap(\''+k+'\','+n+')">'+dlHtml(e.id)+'</button><button class="hb'+(isL(e.id)?' liked':'')+'" onclick="event.stopPropagation();lk(\''+k+'\','+n+',this)">'+svg(isL(e.id)?'heart':'hearto',22)+'</button></div>'}
+function card(e,k,n){return '<div class=card data-id="'+e.id+'" data-k="'+k+'" data-n="'+n+'" style="--d:'+(Math.min(n,8)*50)+'ms" onclick="pk(\''+k+'\','+n+')"><img loading=lazy src="'+art(e.id)+'" onerror="this.style.opacity=0"><b>'+esc(e.title)+'</b><small>'+esc(e.by||'')+'</small></div>'}
 function sec(t,l,k){LS[k]=l;
  const all=(l.length&&k!='ld')?'<button class=dla onclick="dlAll(\''+k+'\')">'+svg('dl',16)+' Save all</button>':'';
  return '<h3><span>'+esc(t)+'</span>'+all+'</h3>'+(l.length?l.map((e,n)=>row(e,k,n)).join(''):'<div class=note>Kuch nahi mila</div>')}
@@ -262,7 +290,6 @@ function go(t){tab=t;++htok;
   if(t=='home')home();
   else{$('r').innerHTML='<h3><span>Search karo</span></h3><div class=note>Song, artist ya album ka naam likho. Offline me sirf download kiye gaane milenge.</div>';$('q').focus()}}
  heroVis();window.scrollTo(0,0)}
-$('q').onkeydown=e=>{if(e.key=='Enter'&&$('q').value.trim()){chipOn=-1;mark(-1);load($('q').value.trim());$('q').blur()}};
 function tog(e){if(isL(e.id))liked=liked.filter(x=>x.id!=e.id);else liked.unshift({id:e.id,title:e.title,by:e.by,dur:e.dur||''});sv();N(()=>Android.refresh())}
 function likeUi(){const on=!!(curE&&isL(curE.id));$('fl').innerHTML=svg(on?'heart':'hearto',26)+'<small>'+(on?'Liked':'Like')+'</small>';$('fl').classList.toggle('liked',on)}
 function lk(k,n,b){const e=(LS[k]||[])[n];if(!e)return;tog(e);b.className='hb'+(isL(e.id)?' liked':'')+' pop';b.innerHTML=svg(isL(e.id)?'heart':'hearto',22);vib();likeUi()}
@@ -295,10 +322,16 @@ function dlAll(k){
  const l=LS[k]||[];let c=0;
  l.forEach(e=>{if(!dlset.has(e.id)&&dlp[e.id]===undefined){N(()=>Android.download(e.id,e.title||'',e.by||'',e.dur||''));dlp[e.id]=-1;c++}});
  dlUi();toast(c?c+' gaane download queue me':'Sab pehle se offline hain')}
+function qi(e){return {id:e.id,title:e.title,by:e.by||'',dur:e.dur||''}}
+function playRadio(e){
+ if(!window.Android){toast('Khan Music app me kholo');return}
+ Q=[qi(e)];i=0;ui(Q[0]);pend=Date.now()+900;qv=-99;vib();
+ N(()=>Android.playRadio(JSON.stringify(Q[0])));setTimeout(poll,150)}
 function pk(k,n){
  const l=LS[k]||[];if(!l[n])return;
  if(!window.Android){toast('Khan Music app me kholo');return}
- Q=l.map(x=>({id:x.id,title:x.title,by:x.by||'',dur:x.dur||''}));i=n;ui(Q[n]);pend=Date.now()+900;qv=-99;vib();
+ if(!/^(ll|lr|ld|o)/.test(k)){playRadio(l[n]);return}
+ Q=l.map(qi);i=n;ui(Q[n]);pend=Date.now()+900;qv=-99;vib();
  N(()=>Android.playQueue(JSON.stringify(Q),n));setTimeout(poll,200)}
 function pi(n){if(!Q[n])return;vib();i=n;ui(Q[n]);pend=Date.now()+900;N(()=>Android.playIndex(n));setTimeout(poll,200)}
 function ui(e){
@@ -365,6 +398,51 @@ function poll(){
  if(!window.Android)return;
  let s;try{s=JSON.parse(Android.getState())}catch(e){return}
  apply(s)}
+let sgT=0,sgSeq=0,SG=[],rs=kvg('rs',[]);
+function sgShow(h){const e=$('sug');if(h){e.innerHTML=h;e.style.display='block'}else{e.innerHTML='';e.style.display='none'}}
+function sgRender(list,recent){
+ SG=list;
+ sgShow(list.length?list.map((t,k)=>'<div class=sg onpointerdown="event.preventDefault();pickSug('+k+')"><span class=sgi>'+svg(recent?'hist':'search',20)+'</span><span class=sgt>'+esc(t)+'</span>'+(recent?'<button class=sgx onpointerdown="event.stopPropagation();event.preventDefault();delRs('+k+')">'+svg('close',18)+'</button>':'')+'</div>').join(''):'')}
+function showRecent(){sgRender(rs.slice(0,8),true)}
+function addRs(t){rs=[t].concat(rs.filter(x=>x.toLowerCase()!=t.toLowerCase())).slice(0,12);kvs('rs',rs)}
+function delRs(k){rs.splice(k,1);kvs('rs',rs);showRecent()}
+function runSearch(t){chipOn=-1;mark(-1);addRs(t);load(t)}
+function pickSug(k){const t=SG[k];if(!t)return;$('q').value=t;$('qc').style.display='block';sgShow('');$('q').blur();runSearch(t)}
+function clearQ(){$('q').value='';$('qc').style.display='none';$('q').focus();showRecent()}
+$('q').oninput=()=>{
+ clearTimeout(sgT);const v=$('q').value.trim();
+ $('qc').style.display=v?'block':'none';
+ if(!v){showRecent();return}
+ sgT=setTimeout(async()=>{
+  const my=++sgSeq;let l=[];
+  try{l=await net('suggest',v)}catch(e){}
+  if(my!=sgSeq||$('q').value.trim()!=v)return;
+  l=l.filter(x=>String(x).toLowerCase()!=v.toLowerCase());l.unshift(v);sgRender(l.slice(0,9),false)},110)};
+$('q').onfocus=()=>{if($('q').value.trim())$('q').oninput();else showRecent()};
+$('q').onblur=()=>setTimeout(()=>sgShow(''),220);
+$('q').onkeydown=e=>{if(e.key=='Enter'&&$('q').value.trim()){sgSeq++;sgShow('');runSearch($('q').value.trim());$('q').blur()}};
+let shE=null;
+function openSheet(k,n){
+ const e=(LS[k]||[])[n];if(!e)return;shE=e;
+ $('shi').src=art(e.id);$('sht').textContent=e.title;$('shb').textContent=e.by||'';
+ $('shl').innerHTML=svg(isL(e.id)?'heart':'hearto',22)+'<span>'+(isL(e.id)?'Liked se hatao':'Like karo')+'</span>';
+ $('shd').innerHTML=svg(dlset.has(e.id)?'check':'dl',22)+'<span>'+(dlset.has(e.id)?'Offline se hatao':'Offline save karo')+'</span>';
+ $('sheet').classList.add('open')}
+function closeSheet(){$('sheet').classList.remove('open')}
+function shPlay(){const e=shE;closeSheet();if(e)playRadio(e)}
+function shNext(){const e=shE;closeSheet();if(!e)return;N(()=>Android.playNext(JSON.stringify(qi(e))));toast('Ye gaana agla chalega')}
+function shQueue(){const e=shE;closeSheet();if(!e)return;N(()=>Android.addQueue(JSON.stringify(qi(e))));toast('Queue me add ho gaya')}
+function shDl(){const e=shE;closeSheet();dlTapE(e)}
+function shLike(){const e=shE;closeSheet();if(!e)return;tog(e);likeUi();toast(isL(e.id)?'Liked songs me add hua':'Liked se hata diya')}
+function shShare(){const e=shE;closeSheet();if(!e)return;N(()=>Android.share(e.title+' - https://youtu.be/'+e.id))}
+(function(){let t=0,fired=false,sx=0,sy=0;
+ document.addEventListener('touchstart',e=>{
+  const el=e.target.closest('.it[data-k],.card[data-k]');if(!el)return;
+  fired=false;sx=e.touches[0].clientX;sy=e.touches[0].clientY;clearTimeout(t);
+  t=setTimeout(()=>{fired=true;vib();openSheet(el.dataset.k,+el.dataset.n)},450)},{passive:true});
+ document.addEventListener('touchmove',e=>{const p=e.touches[0];if(Math.abs(p.clientX-sx)>10||Math.abs(p.clientY-sy)>10)clearTimeout(t)},{passive:true});
+ document.addEventListener('touchend',()=>clearTimeout(t),{passive:true});
+ document.addEventListener('click',e=>{if(fired){e.stopPropagation();e.preventDefault();fired=false}},true)})();
 function swipe(el,onL,onR){let x0=0,y0=0;
  el.addEventListener('touchstart',e=>{x0=e.touches[0].clientX;y0=e.touches[0].clientY},{passive:true});
  el.addEventListener('touchend',e=>{const t=e.changedTouches[0],dx=t.clientX-x0,dy=t.clientY-y0;
@@ -375,6 +453,7 @@ swipe($('mini'),nx,pv);swipe($('fi'),nx,pv);
  fl.addEventListener('touchmove',e=>{if(!on)return;dy=e.touches[0].clientY-y0;if(dy>0){fl.style.transition='none';fl.style.transform='translateY('+dy+'px)'}},{passive:true});
  fl.addEventListener('touchend',()=>{if(!on)return;on=false;fl.style.transition='';fl.style.transform='';if(dy>130)closeFull()})})();
 window.bk=function(){
+ if($('sheet').classList.contains('open')){closeSheet();return true}
  if($('qs').classList.contains('open')){closeQ();return true}
  if(fo){closeFull();return true}
  if(tab!='home'){go('home');return true}
@@ -384,5 +463,5 @@ async function chkUpd(quiet){
   if(u.newer){toast('Naya version '+u.latest+' mila, download khul raha hai');N(()=>Android.openUrl(u.url))}
   else if(!quiet)toast('Aap latest ('+u.cur+') par ho')}
  catch(e){if(!quiet)toast('Update check nahi hua: '+e)}}
-loadDL();pp(false);likeUi();go('home');poll();setInterval(poll,250);setTimeout(()=>chkUpd(true),4000);
+loadDL();pp(false);likeUi();go('home');poll();setInterval(poll,250);setTimeout(()=>chkUpd(true),4000);setTimeout(()=>{if(hist.length)net('warm',JSON.stringify(hist.slice(0,3).map(x=>x.id))).catch(()=>{})},1500);
 </script></body></html>

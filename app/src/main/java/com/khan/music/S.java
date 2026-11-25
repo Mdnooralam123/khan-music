@@ -10,6 +10,8 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
@@ -28,6 +30,7 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
@@ -65,7 +68,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 
 public class S extends Service {
     static volatile S inst;
-    static final String VERSION = "3.1";
+    static final String VERSION = "3.2";
     static final String BASE = "http://127.0.0.1:5000";
     static final String UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
     static final String UA_ANDROID = "com.google.android.youtube/19.44.38 (Linux; U; Android 14) gzip";
@@ -93,7 +96,8 @@ public class S extends Service {
     ExoPlayer player;
     PowerManager.WakeLock wl;
     NotificationManager nm;
-    Bitmap art;
+    Bitmap art, logo;
+    boolean radio;
     String artId = "";
     String ac = "";
     String vid = "", title = "Khan Music", artist = "Search karke gaana lagao", err = "";
@@ -127,6 +131,7 @@ public class S extends Service {
         });
         ms.setActive(true);
         h.post(tick);
+        io.execute(() -> { try { initNP(); } catch (Throwable t) { } });
     }
 
     final Runnable tick = new Runnable() {
@@ -300,16 +305,38 @@ public class S extends Service {
     }
 
     void warm(JSONArray a) {
-        final ArrayList<String> ids = new ArrayList<String>();
-        for (int k = 0; k < a.length() && ids.size() < 2; k++) {
+        for (int k = 0; k < a.length() && k < 3; k++) {
             JSONObject o = a.optJSONObject(k);
-            if (o != null) ids.add(o.optString("id"));
+            if (o == null) continue;
+            final String id = o.optString("id");
+            io.execute(() -> { try { resolve(id); } catch (Exception e) { } });
         }
-        io.execute(() -> {
-            for (String id : ids) {
-                try { resolve(id); } catch (Exception e) { }
+    }
+
+    void warmIds(String json) {
+        try {
+            JSONArray a = new JSONArray(json);
+            for (int k = 0; k < a.length() && k < 3; k++) {
+                final String id = a.getString(k);
+                io.execute(() -> { try { resolve(id); } catch (Exception e) { } });
             }
-        });
+        } catch (Exception e) { }
+    }
+
+    JSONArray suggest(String q0) throws Exception {
+        String body = getUa("https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&hl=en&q="
+            + URLEncoder.encode(q0, "UTF-8"), 8000, UA_WEB);
+        int a = body.indexOf('[');
+        int b = body.lastIndexOf(']');
+        JSONArray root = new JSONArray(body.substring(a, b + 1));
+        JSONArray list = root.getJSONArray(1);
+        JSONArray out = new JSONArray();
+        for (int k = 0; k < list.length() && k < 10; k++) {
+            Object o = list.get(k);
+            if (o instanceof JSONArray) out.put(((JSONArray) o).getString(0));
+            else out.put(String.valueOf(o));
+        }
+        return out;
     }
 
     JSONArray related(String id, String t) throws Exception {
@@ -400,6 +427,11 @@ public class S extends Service {
                 } else if (kind.equals("related")) {
                     JSONObject a = new JSONObject(arg);
                     out = related(a.optString("id"), a.optString("t")).toString();
+                } else if (kind.equals("suggest")) {
+                    out = suggest(arg).toString();
+                } else if (kind.equals("warm")) {
+                    warmIds(arg);
+                    out = "[]";
                 } else if (kind.equals("update")) {
                     out = updateJson();
                 } else {
@@ -465,11 +497,46 @@ public class S extends Service {
             q.clear();
             for (int k = 0; k < a.length(); k++) q.add(a.getJSONObject(k));
             fails = 0;
+            radio = false;
             rebuildQ();
             playAt(n);
         } catch (Exception e) {
             err = "queue: " + e.getMessage();
         }
+    }
+
+    void playRadio(String json) {
+        try {
+            JSONObject o = new JSONObject(json);
+            q.clear();
+            q.add(o);
+            fails = 0;
+            radio = true;
+            rebuildQ();
+            playAt(0);
+        } catch (Exception e) {
+            err = "radio: " + e.getMessage();
+        }
+    }
+
+    void playNext(String json) {
+        try {
+            JSONObject o = new JSONObject(json);
+            if (q.isEmpty()) { q.add(o); rebuildQ(); playAt(0); return; }
+            int at = (idx >= 0 && idx < q.size()) ? idx + 1 : q.size();
+            q.add(at, o);
+            rebuildQ();
+        } catch (Exception e) { }
+    }
+
+    void addQueue(String json) {
+        try {
+            JSONObject o = new JSONObject(json);
+            boolean was = q.isEmpty();
+            q.add(o);
+            rebuildQ();
+            if (was) playAt(0);
+        } catch (Exception e) { }
     }
 
     void playAt(int n) {
@@ -498,7 +565,11 @@ public class S extends Service {
         io.execute(() -> {
             try {
                 final Res r = resolve(id);
-                h.post(() -> { if (my == gen) startPlay(r.url, r.ua, false, my); });
+                h.post(() -> {
+                    if (my != gen) return;
+                    startPlay(r.url, r.ua, false, my);
+                    if (q.size() - idx <= 3) appendRel(r.related);
+                });
             } catch (final Exception ex) {
                 h.post(() -> { if (my == gen) fail(ex.getMessage()); });
             }
@@ -506,7 +577,10 @@ public class S extends Service {
     }
 
     void initPlayer() {
-        player = new ExoPlayer.Builder(this).build();
+        DefaultLoadControl lc = new DefaultLoadControl.Builder()
+            .setBufferDurationsMs(15000, 60000, 400, 1500)
+            .build();
+        player = new ExoPlayer.Builder(this).setLoadControl(lc).build();
         player.setAudioAttributes(new AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true);
@@ -659,6 +733,43 @@ public class S extends Service {
         }
     }
 
+    int addRel(JSONArray a) {
+        HashSet<String> have = new HashSet<String>();
+        for (JSONObject o : q) have.add(o.optString("id"));
+        int added = 0;
+        for (int k = 0; k < a.length() && added < 25; k++) {
+            JSONObject o = a.optJSONObject(k);
+            if (o != null && have.add(o.optString("id"))) { q.add(o); added++; }
+        }
+        if (added > 0) rebuildQ();
+        return added;
+    }
+
+    void appendRel(JSONArray a) {
+        if (addRel(a) == 0) more();
+    }
+
+    void addLocal() {
+        HashSet<String> have = new HashSet<String>();
+        for (JSONObject o : q) have.add(o.optString("id"));
+        JSONArray a = dlIndex();
+        int added = 0;
+        for (int k = a.length() - 1; k >= 0 && added < 20; k--) {
+            JSONObject o = a.optJSONObject(k);
+            if (o == null || !have.add(o.optString("id"))) continue;
+            try {
+                JSONObject r = new JSONObject();
+                r.put("id", o.optString("id"));
+                r.put("title", o.optString("title"));
+                r.put("by", o.optString("by"));
+                r.put("dur", o.optString("dur"));
+                q.add(r);
+                added++;
+            } catch (Exception e) { }
+        }
+        if (added > 0) rebuildQ();
+    }
+
     void more() {
         if (moreBusy || q.size() - idx > 3) return;
         moreBusy = true;
@@ -667,17 +778,11 @@ public class S extends Service {
             try {
                 final JSONArray a = related(id, t);
                 h.post(() -> {
-                    HashSet<String> have = new HashSet<String>();
-                    for (JSONObject o : q) have.add(o.optString("id"));
-                    for (int k = 0; k < a.length(); k++) {
-                        JSONObject o = a.optJSONObject(k);
-                        if (o != null && have.add(o.optString("id"))) q.add(o);
-                    }
-                    rebuildQ();
+                    if (addRel(a) == 0) addLocal();
                     moreBusy = false;
                 });
             } catch (Exception e) {
-                h.post(() -> { moreBusy = false; });
+                h.post(() -> { addLocal(); moreBusy = false; });
             }
         });
     }
@@ -971,10 +1076,14 @@ public class S extends Service {
     // ---------------- http helper + art ----------------
 
     static String get(String u, int readMs) throws Exception {
+        return getUa(u, readMs, "KhanMusic");
+    }
+
+    static String getUa(String u, int readMs, String ua) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(readMs);
-        c.setRequestProperty("User-Agent", "KhanMusic");
+        c.setRequestProperty("User-Agent", ua);
         c.setRequestProperty("Accept", "application/json");
         int code = c.getResponseCode();
         InputStream is = code >= 400 ? c.getErrorStream() : c.getInputStream();
@@ -999,6 +1108,19 @@ public class S extends Service {
             final String fa = a;
             h.post(() -> { if (id.equals(vid)) { art = fb; ac = fa; push(); } });
         });
+    }
+
+    Bitmap logoBmp() {
+        if (logo == null) {
+            try {
+                Bitmap b = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888);
+                Drawable d = getDrawable(R.drawable.ic);
+                d.setBounds(0, 0, 512, 512);
+                d.draw(new Canvas(b));
+                logo = b;
+            } catch (Exception e) { }
+        }
+        return logo;
     }
 
     static Bitmap square(Bitmap b) {
@@ -1069,9 +1191,14 @@ public class S extends Service {
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, artist);
             if (dur > 0) mb.putLong(MediaMetadata.METADATA_KEY_DURATION, dur);
-            if (art != null) {
-                mb.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, art);
-                mb.putBitmap(MediaMetadata.METADATA_KEY_ART, art);
+            mb.putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, title);
+            mb.putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, artist);
+            mb.putString(MediaMetadata.METADATA_KEY_ALBUM, "Khan Music");
+            Bitmap shown = art != null ? art : logoBmp();
+            if (shown != null) {
+                mb.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, shown);
+                mb.putBitmap(MediaMetadata.METADATA_KEY_ART, shown);
+                mb.putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, shown);
             }
             ms.setMetadata(mb.build());
             long acts = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
@@ -1107,7 +1234,8 @@ public class S extends Service {
             .setOngoing(playing)
             .setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC);
-        if (art != null) b.setLargeIcon(art);
+        Bitmap shown = art != null ? art : logoBmp();
+        if (shown != null) b.setLargeIcon(shown);
         b.addAction(act(android.R.drawable.ic_media_previous, "Prev", "PREV", 1));
         b.addAction(act(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
             playing ? "Pause" : "Play", "TOG", 2));

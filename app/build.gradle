@@ -6,19 +6,23 @@ android {
         applicationId 'com.khan.music'
         minSdk 26
         targetSdk 34
-        versionCode 4
-        versionName '3.1'
+        versionCode 5
+        versionName '3.2'
     }
     signingConfigs {
         debug {
-            storeFile file('khan.jks')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            if (file('khan.jks').exists()) {
+                storeFile file('khan.jks')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
         }
     }
     buildTypes {
-        debug { signingConfig signingConfigs.debug }
+        debug {
+            if (file('khan.jks').exists()) { signingConfig signingConfigs.debug }
+        }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

@@ -48,6 +48,38 @@ public class M extends Activity {
         }
 
         @JavascriptInterface
+        public void playRadio(final String j) {
+            final S s = S.inst;
+            if (s != null) s.post(() -> s.playRadio(j));
+        }
+
+        @JavascriptInterface
+        public void playNext(final String j) {
+            final S s = S.inst;
+            if (s != null) s.post(() -> s.playNext(j));
+        }
+
+        @JavascriptInterface
+        public void addQueue(final String j) {
+            final S s = S.inst;
+            if (s != null) s.post(() -> s.addQueue(j));
+        }
+
+        @JavascriptInterface
+        public void share(final String text) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        Intent i = new Intent(Intent.ACTION_SEND);
+                        i.setType("text/plain");
+                        i.putExtra(Intent.EXTRA_TEXT, text);
+                        startActivity(Intent.createChooser(i, "Share"));
+                    } catch (Exception e) { }
+                }
+            });
+        }
+
+        @JavascriptInterface
         public void playIndex(final int n) {
             final S s = S.inst;
             if (s != null) s.post(() -> s.playAt(n));
