@@ -2,6 +2,7 @@ package com.khan.music;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.media.audiofx.AudioEffect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -75,6 +76,61 @@ public class M extends Activity {
                         i.putExtra(Intent.EXTRA_TEXT, text);
                         startActivity(Intent.createChooser(i, "Share"));
                     } catch (Exception e) { }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void setPref(final String k, final String v) {
+            final S s = S.inst;
+            if (s != null) s.post(() -> s.setPref(k, v));
+        }
+
+        @JavascriptInterface
+        public void speed(final double f) {
+            final S s = S.inst;
+            if (s != null) s.post(() -> s.setSpeed((float) f));
+        }
+
+        @JavascriptInterface
+        public void removeAt(final int n) {
+            final S s = S.inst;
+            if (s != null) s.post(() -> s.removeAt(n));
+        }
+
+        @JavascriptInterface
+        public void clearNext() {
+            final S s = S.inst;
+            if (s != null) s.post(() -> s.clearNext());
+        }
+
+        @JavascriptInterface
+        public String getDlSize() {
+            S s = S.inst;
+            return s == null ? "0" : String.valueOf(s.dlSize());
+        }
+
+        @JavascriptInterface
+        public void deleteAllDl() {
+            final S s = S.inst;
+            if (s != null) s.post(() -> s.deleteAllDl());
+        }
+
+        @JavascriptInterface
+        public void openEq() {
+            final S s = S.inst;
+            final int sid = s == null ? 0 : s.audioSession();
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    try {
+                        Intent i = new Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL);
+                        i.putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sid);
+                        i.putExtra(AudioEffect.EXTRA_PACKAGE_NAME, getPackageName());
+                        i.putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC);
+                        startActivityForResult(i, 77);
+                    } catch (Exception e) {
+                        js("toast('Equalizer app nahi mila')");
+                    }
                 }
             });
         }

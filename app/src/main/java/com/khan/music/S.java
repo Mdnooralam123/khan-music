@@ -45,6 +45,9 @@ import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -68,7 +71,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 
 public class S extends Service {
     static volatile S inst;
-    static final String VERSION = "3.2";
+    static final String VERSION = "3.3";
     static final String BASE = "http://127.0.0.1:5000";
     static final String UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
     static final String UA_ANDROID = "com.google.android.youtube/19.44.38 (Linux; U; Android 14) gzip";
@@ -98,6 +101,10 @@ public class S extends Service {
     NotificationManager nm;
     Bitmap art, logo;
     boolean radio;
+    int pre = -1, planned = -1;
+    float speed = 1f;
+    final LinkedList<String> recent = new LinkedList<String>();
+    JSONArray prevRel = new JSONArray(), curRel = new JSONArray();
     String artId = "";
     String ac = "";
     String vid = "", title = "Khan Music", artist = "Search karke gaana lagao", err = "";
@@ -180,6 +187,37 @@ public class S extends Service {
     }
 
     void post(Runnable r) { h.post(r); }
+
+    String pref(String k, String d) { return getSharedPreferences("khan", MODE_PRIVATE).getString("p_" + k, d); }
+
+    void setPref(String k, String v) {
+        getSharedPreferences("khan", MODE_PRIVATE).edit().putString("p_" + k, v).apply();
+        if (k.equals("q")) cache.clear();
+    }
+
+    boolean autoOn() { return !"off".equals(pref("auto", "on")); }
+
+    void noteRecent(String id) {
+        if (id == null || id.isEmpty()) return;
+        recent.remove(id);
+        recent.addFirst(id);
+        while (recent.size() > 60) recent.removeLast();
+    }
+
+    static String tkey(String t) {
+        String s = t == null ? "" : t.toLowerCase();
+        s = s.replaceAll("\\(.*?\\)|\\[.*?\\]", " ");
+        String[] w = s.split("[^\\p{L}\\p{N}]+");
+        StringBuilder b = new StringBuilder();
+        int n = 0;
+        for (String x : w) {
+            if (x.isEmpty()) continue;
+            if (n++ > 0) b.append(' ');
+            b.append(x);
+            if (n >= 3) break;
+        }
+        return b.toString();
+    }
 
     // ---------------- YouTube (NewPipe, no Termux needed) ----------------
 
@@ -284,9 +322,39 @@ public class S extends Service {
     }
 
     JSONArray search(String q0) throws Exception {
+        return search(q0, "songs".equals(pref("sm", "songs")));
+    }
+
+    SearchExtractor songsExtractor(String q0) throws Exception {
+        Object svc = ServiceList.YouTube;
+        Object f = svc.getClass().getMethod("getSearchQHFactory").invoke(svc);
+        Method fq = null;
+        for (Method m : f.getClass().getMethods()) {
+            if (m.getName().equals("fromQuery") && m.getParameterTypes().length == 3) { fq = m; break; }
+        }
+        if (fq == null) throw new Exception("filter api nahi");
+        Object qh = fq.invoke(f, q0, Collections.singletonList("music_songs"), "");
+        for (Method m : svc.getClass().getMethods()) {
+            if (m.getName().equals("getSearchExtractor") && m.getParameterTypes().length == 1
+                    && m.getParameterTypes()[0].isInstance(qh)) {
+                return (SearchExtractor) m.invoke(svc, qh);
+            }
+        }
+        throw new Exception("extractor api nahi");
+    }
+
+    JSONArray search(String q0, boolean songs) throws Exception {
         Exception last = null;
+        initNP();
+        if (songs) {
+            try {
+                SearchExtractor se = songsExtractor(q0);
+                se.fetchPage();
+                JSONArray a = toJson(se.getInitialPage().getItems());
+                if (a.length() > 0) { warm(a); return a; }
+            } catch (Throwable t) { }
+        }
         try {
-            initNP();
             SearchExtractor se = ServiceList.YouTube.getSearchExtractor(q0);
             se.fetchPage();
             JSONArray a = toJson(se.getInitialPage().getItems());
@@ -378,13 +446,17 @@ public class S extends Service {
         StreamInfo info = StreamInfo.getInfo("https://www.youtube.com/watch?v=" + id);
         AudioStream best = null;
         int bs = -1;
+        String ql = pref("q", "auto");
         for (AudioStream a : info.getAudioStreams()) {
             String content = a.getContent();
             if (content == null || !content.startsWith("http")) continue;
             if (!"PROGRESSIVE_HTTP".equals(String.valueOf(a.getDeliveryMethod()))) continue;
             int br = a.getAverageBitrate();
             String fm = a.getFormat() == null ? "" : a.getFormat().name();
-            int sc = (fm.contains("M4A") ? 100000 : 0) + (br > 0 && br <= 200 ? br : 0);
+            int sc;
+            if ("low".equals(ql)) sc = (fm.contains("M4A") ? 100000 : 0) + (br > 0 ? 1000 - Math.min(br, 999) : 0);
+            else if ("high".equals(ql)) sc = (fm.contains("M4A") ? 100000 : 0) + Math.min(Math.max(br, 0), 999);
+            else sc = (fm.contains("M4A") ? 100000 : 0) + (br > 0 && br <= 200 ? br : 0);
             if (sc > bs) { bs = sc; best = a; }
         }
         if (best == null) throw new Exception("audio stream nahi mila");
@@ -423,7 +495,15 @@ public class S extends Service {
             try {
                 String out;
                 if (kind.equals("search")) {
-                    out = search(arg).toString();
+                    String q1 = arg;
+                    boolean songs = "songs".equals(pref("sm", "songs"));
+                    if (arg.startsWith("{")) {
+                        JSONObject so = new JSONObject(arg);
+                        q1 = so.optString("q");
+                        String mm = so.optString("m", "");
+                        if (mm.length() > 0) songs = mm.equals("songs");
+                    }
+                    out = search(q1, songs).toString();
                 } else if (kind.equals("related")) {
                     JSONObject a = new JSONObject(arg);
                     out = related(a.optString("id"), a.optString("t")).toString();
@@ -526,7 +606,45 @@ public class S extends Service {
             int at = (idx >= 0 && idx < q.size()) ? idx + 1 : q.size();
             q.add(at, o);
             rebuildQ();
+            invalidatePreload();
         } catch (Exception e) { }
+    }
+
+    void removeAt(int n) {
+        if (n < 0 || n >= q.size() || n == idx) return;
+        q.remove(n);
+        if (n < idx) idx--;
+        rebuildQ();
+        invalidatePreload();
+    }
+
+    void clearNext() {
+        while (q.size() > idx + 1) q.remove(q.size() - 1);
+        rebuildQ();
+        invalidatePreload();
+    }
+
+    void setSpeed(float f) {
+        speed = f;
+        if (player != null) player.setPlaybackSpeed(f);
+        snapshot();
+    }
+
+    int audioSession() { return player != null ? player.getAudioSessionId() : 0; }
+
+    long dlSize() {
+        long t = 0;
+        File[] fs = offDir().listFiles();
+        if (fs != null) for (File f : fs) t += f.length();
+        return t;
+    }
+
+    void deleteAllDl() {
+        File[] fs = offDir().listFiles();
+        if (fs != null) for (File f : fs) f.delete();
+        getSharedPreferences("khan", MODE_PRIVATE).edit().putString("dl", "[]").apply();
+        dn++;
+        snapshot();
     }
 
     void addQueue(String json) {
@@ -535,7 +653,7 @@ public class S extends Service {
             boolean was = q.isEmpty();
             q.add(o);
             rebuildQ();
-            if (was) playAt(0);
+            if (was) playAt(0); else invalidatePreload();
         } catch (Exception e) { }
     }
 
@@ -554,6 +672,9 @@ public class S extends Service {
         dur = 0;
         final int my = ++gen;
         stopPlayer();
+        prevRel = curRel;
+        curRel = new JSONArray();
+        noteRecent(vid);
         if (!vid.equals(artId)) { art = null; ac = ""; artId = vid; fetchArt(vid); }
         push();
         final String id = vid;
@@ -567,6 +688,7 @@ public class S extends Service {
                 final Res r = resolve(id);
                 h.post(() -> {
                     if (my != gen) return;
+                    curRel = r.related;
                     startPlay(r.url, r.ua, false, my);
                     if (q.size() - idx <= 3) appendRel(r.related);
                 });
@@ -593,8 +715,7 @@ public class S extends Service {
                     if (!prepared) {
                         prepared = true;
                         fails = 0;
-                        prefetch();
-                        more();
+                        afterStart();
                     }
                     loading = false;
                 } else if (st == Player.STATE_ENDED) {
@@ -603,6 +724,14 @@ public class S extends Service {
                 }
                 syncState();
                 push();
+            }
+
+            @Override
+            public void onMediaItemTransition(MediaItem item, int reason) {
+                if (pre >= 0 && player != null && player.getMediaItemCount() > 1
+                        && player.getCurrentMediaItemIndex() == 1) {
+                    advanceTo(pre);
+                }
             }
 
             @Override
@@ -624,24 +753,119 @@ public class S extends Service {
         playing = player.getPlayWhenReady() && (st == Player.STATE_READY || st == Player.STATE_BUFFERING);
     }
 
+    MediaSource buildSource(String src, String ua, boolean local) {
+        Uri uri = local ? Uri.fromFile(new File(src)) : Uri.parse(src);
+        DefaultHttpDataSource.Factory hf = new DefaultHttpDataSource.Factory()
+            .setUserAgent(ua)
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15000)
+            .setReadTimeoutMs(20000);
+        DefaultDataSource.Factory df = new DefaultDataSource.Factory(this, hf);
+        return new DefaultMediaSourceFactory(df).createMediaSource(MediaItem.fromUri(uri));
+    }
+
     void startPlay(String src, String ua, boolean local, int my) {
         try {
             if (player == null) initPlayer();
-            Uri uri = local ? Uri.fromFile(new File(src)) : Uri.parse(src);
-            DefaultHttpDataSource.Factory hf = new DefaultHttpDataSource.Factory()
-                .setUserAgent(ua)
-                .setAllowCrossProtocolRedirects(true)
-                .setConnectTimeoutMs(15000)
-                .setReadTimeoutMs(20000);
-            DefaultDataSource.Factory df = new DefaultDataSource.Factory(this, hf);
-            MediaSource msrc = new DefaultMediaSourceFactory(df).createMediaSource(MediaItem.fromUri(uri));
-            player.setMediaSource(msrc);
+            pre = -1;
+            planned = -1;
+            player.setMediaSource(buildSource(src, ua, local));
             player.prepare();
+            player.setPlaybackSpeed(speed);
             player.setPlayWhenReady(true);
             player.setRepeatMode(repeat ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
         } catch (Exception ex) {
             fail(ex.getMessage());
         }
+    }
+
+    // ---- next-track planning, gapless preload and smart autoplay ----
+
+    int planNext() {
+        if (q.isEmpty() || idx < 0 || repeat) return -1;
+        if (shuffle && q.size() > 1) {
+            if (planned < 0 || planned >= q.size() || planned == idx) {
+                do { planned = rnd.nextInt(q.size()); } while (planned == idx);
+            }
+            return planned;
+        }
+        planned = idx + 1;
+        if (planned >= q.size()) { planned = -1; return -1; }
+        return planned;
+    }
+
+    void afterStart() {
+        Res c = cache.get(vid);
+        if (c != null && q.size() - idx <= 3) appendRel(c.related);
+        else more();
+        prefetch();
+        preloadNext();
+    }
+
+    void preloadNext() {
+        if (player == null || !prepared || repeat) return;
+        if (player.getMediaItemCount() > 1) return;
+        final int n = planNext();
+        if (n < 0 || n >= q.size()) return;
+        final String id = q.get(n).optString("id");
+        final int my = gen;
+        File lf = localFile(id);
+        if (lf != null) {
+            addPreloaded(n, lf.getAbsolutePath(), UA_WEB, true, my);
+            return;
+        }
+        io.execute(() -> {
+            try {
+                final Res r = resolve(id);
+                h.post(() -> addPreloaded(n, r.url, r.ua, false, my));
+            } catch (Exception e) { }
+        });
+    }
+
+    void addPreloaded(int n, String src, String ua, boolean local, int my) {
+        if (player == null || my != gen || player.getMediaItemCount() != 1 || planned != n) return;
+        try {
+            player.addMediaSource(buildSource(src, ua, local));
+            pre = n;
+        } catch (Exception e) { }
+    }
+
+    void invalidatePreload() {
+        planned = -1;
+        if (player != null && pre >= 0) {
+            try {
+                if (player.getMediaItemCount() > 1) player.removeMediaItem(1);
+            } catch (Exception e) { }
+        }
+        pre = -1;
+        preloadNext();
+    }
+
+    void advanceTo(int n) {
+        pre = -1;
+        planned = -1;
+        gen++;
+        if (n < 0 || n >= q.size()) return;
+        idx = n;
+        JSONObject e = q.get(n);
+        prevRel = curRel;
+        vid = e.optString("id");
+        title = e.optString("title");
+        artist = e.optString("by");
+        Res c = cache.get(vid);
+        curRel = c != null ? c.related : new JSONArray();
+        err = "";
+        loading = false;
+        prepared = true;
+        fails = 0;
+        pos = 0;
+        dur = 0;
+        try { player.removeMediaItem(0); } catch (Exception ex) { }
+        noteRecent(vid);
+        if (!vid.equals(artId)) { art = null; ac = ""; artId = vid; fetchArt(vid); }
+        syncState();
+        push();
+        afterStart();
     }
 
     void stopPlayer() {
@@ -651,6 +875,8 @@ public class S extends Service {
                 player.clearMediaItems();
             } catch (Exception e) { }
         }
+        pre = -1;
+        planned = -1;
         prepared = false;
     }
 
@@ -670,12 +896,18 @@ public class S extends Service {
 
     void next() {
         if (q.isEmpty()) return;
-        int n;
-        if (shuffle && q.size() > 1) {
-            do { n = rnd.nextInt(q.size()); } while (n == idx);
-        } else {
-            n = idx + 1;
-            if (n >= q.size()) n = 0;
+        int n = planNext();
+        if (n < 0) {
+            if (shuffle && q.size() > 1) {
+                do { n = rnd.nextInt(q.size()); } while (n == idx);
+            } else {
+                n = idx + 1;
+                if (n >= q.size()) n = 0;
+            }
+        }
+        if (pre >= 0 && n == pre && player != null && player.getMediaItemCount() > 1) {
+            player.seekToNextMediaItem();
+            return;
         }
         playAt(n);
     }
@@ -715,11 +947,12 @@ public class S extends Service {
         }
     }
 
-    void setShuffle(boolean b) { shuffle = b; snapshot(); }
+    void setShuffle(boolean b) { shuffle = b; invalidatePreload(); snapshot(); }
 
     void setRepeat(boolean b) {
         repeat = b;
         if (player != null) player.setRepeatMode(b ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+        invalidatePreload();
         snapshot();
     }
 
@@ -733,15 +966,42 @@ public class S extends Service {
         }
     }
 
-    int addRel(JSONArray a) {
+    static JSONArray interleave(JSONArray a, JSONArray b, boolean mix) {
+        if (!mix) return a;
+        JSONArray o = new JSONArray();
+        int n = Math.max(a.length(), b.length());
+        for (int k = 0; k < n; k++) {
+            if (k < a.length()) o.put(a.opt(k));
+            if (k < b.length()) o.put(b.opt(k));
+        }
+        return o;
+    }
+
+    int addRel(JSONArray a0) {
+        if (!autoOn()) return 0;
+        JSONArray a = interleave(a0, prevRel, radio);
         HashSet<String> have = new HashSet<String>();
-        for (JSONObject o : q) have.add(o.optString("id"));
+        for (JSONObject o : q) {
+            have.add(o.optString("id"));
+            have.add("t:" + tkey(o.optString("title")));
+        }
+        for (String r : recent) have.add(r);
         int added = 0;
         for (int k = 0; k < a.length() && added < 25; k++) {
             JSONObject o = a.optJSONObject(k);
-            if (o != null && have.add(o.optString("id"))) { q.add(o); added++; }
+            if (o == null) continue;
+            String id = o.optString("id");
+            String tk = "t:" + tkey(o.optString("title"));
+            if (have.contains(id) || have.contains(tk)) continue;
+            have.add(id);
+            have.add(tk);
+            q.add(o);
+            added++;
         }
-        if (added > 0) rebuildQ();
+        if (added > 0) {
+            rebuildQ();
+            if (pre < 0) preloadNext();
+        }
         return added;
     }
 
@@ -1177,6 +1437,7 @@ public class S extends Service {
             o.put("dn", dn);
             o.put("de", dlErr);
             o.put("lv", lv);
+            o.put("spd", (double) speed);
             o.put("ac", ac);
             JSONObject d = new JSONObject();
             for (Map.Entry<String, Integer> en : dlp.entrySet()) d.put(en.getKey(), en.getValue().intValue());
